@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GLGC — Hub &amp; Sunday Attendance · Slideshow</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="data.js?v=4"></script>
+  <style>
+    :root { --blue:#1f5fff; --gold:#e6c878; --red:#e2574c; --sun:#f5c518; }
+    * { box-sizing:border-box; }
+    html, body { margin:0; background:#000; color:#fff; font-family:Arial, Helvetica, sans-serif; }
+
+    .top { display:flex; gap:10px; justify-content:center; align-items:center; padding:12px 16px 4px; flex-wrap:wrap; }
+    .nav { display:flex; gap:10px; flex-wrap:wrap; }
+    .nav a { color:#bbb; text-decoration:none; border:1px solid #333; border-radius:20px; padding:7px 16px; font-size:14px; }
+    .nav a.active { background:var(--gold); color:#000; border-color:var(--gold); font-weight:bold; }
+    select { background:#111; color:#fff; border:1px solid #333; border-radius:8px; padding:8px 12px; font-size:14px; max-width:260px; }
+
+    .navbtn { position:fixed; top:50%; transform:translateY(-50%); z-index:5;
+      width:56px; height:110px; border:1px solid #333; background:#141414cc; color:var(--gold);
+      font-size:44px; line-height:1; border-radius:12px; cursor:pointer; }
+    .navbtn:hover { background:#222; }
+    .navbtn.prev { left:14px; } .navbtn.next { right:14px; }
+    .navbtn:disabled { opacity:.25; cursor:default; }
+
+    .stage { max-width:1180px; margin:0 auto; padding:6px 76px 50px; }
+    .header { text-align:center; margin:12px 0 4px; }
+    .header .gname { font-family:Georgia,'Times New Roman',serif; color:var(--gold);
+      font-size:38px; font-weight:bold; letter-spacing:.5px; display:block; }
+    .header .prog { color:#888; font-size:13px; margin-top:8px; }
+
+    .totrow { display:flex; gap:12px; justify-content:center; margin:14px 0 2px; flex-wrap:wrap; }
+    .tot { font-size:14px; font-weight:bold; padding:7px 16px; border-radius:22px; }
+    .tot.reh { background:rgba(31,95,255,.16); color:#8fb0ff; border:1px solid #2b52b8; }
+    .tot.sun { background:rgba(245,197,24,.14); color:var(--sun); border:1px solid #7d6a1b; }
+    .tot.def { background:rgba(226,87,76,.14); color:#f2938b; border:1px solid #8a3730; }
+
+    .section { margin-top:18px; }
+    .section-label { display:inline-block; background:#161616; border:1px solid #333;
+      border-left:4px solid var(--gold); border-radius:8px; padding:7px 16px;
+      font-size:15px; font-weight:bold; letter-spacing:.5px; }
+    .legend { display:flex; gap:24px; margin:12px 2px 2px; color:#cfcfcf; font-size:14px; flex-wrap:wrap; }
+    .legend span { display:inline-flex; align-items:center; gap:8px; }
+    .sw { width:22px; height:12px; border-radius:2px; display:inline-block; }
+    .chartscroll { overflow-x:auto; }
+    .chartinner { height:360px; min-width:100%; }
+
+    /* defaulter panels — two side by side */
+    .defgrid { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:16px; }
+    @media (max-width:760px){ .defgrid { grid-template-columns:1fr; } }
+    .defcol .section-label { border-left-color:var(--red); }
+    .defcol .section-label.reh { border-left-color:var(--blue); }
+    .defaulters { margin-top:10px; border:1px solid #2a2a2a; border-radius:12px; overflow:hidden; }
+    .def-row { display:flex; align-items:center; gap:10px; padding:10px 14px; border-bottom:1px solid #1e1e1e; }
+    .def-row:last-child { border-bottom:none; }
+    .def-row .dot { width:9px; height:9px; border-radius:50%; background:var(--red); flex:none; }
+    .def-row .who { font-weight:bold; font-size:14px; }
+    .def-row .reason { margin-left:auto; font-size:12px; color:#f2938b; background:rgba(226,87,76,.12);
+      border:1px solid #6e2c26; padding:3px 10px; border-radius:20px; white-space:nowrap; }
+    .def-none { padding:16px 14px; text-align:center; color:#8fd6a8; font-size:14px; }
+    .def-none b { color:#b6f0c6; }
+    .def-all { padding:14px; color:#f2938b; font-size:14px; }
+    .def-all b { color:#ffb3ab; }
+
+    @media (max-width:820px){
+      .stage { padding:6px 12px 50px; }
+      .header .gname { font-size:28px; }
+      .navbtn { width:40px; height:64px; font-size:30px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="top">
+    <div class="nav">
+      <a href="slides.html" class="active">Slideshow</a>
+      <a href="summary.html">Weekly Summary</a>
+    </div>
+    <select id="jump" onchange="goTo(+this.value)"></select>
+  </div>
+
+  <button class="navbtn prev" id="prev" onclick="step(-1)">‹</button>
+  <button class="navbtn next" id="next" onclick="step(1)">›</button>
+
+  <div class="stage">
+    <div class="header">
+      <span class="gname" id="gname"></span>
+      <div class="prog" id="prog"></div>
+    </div>
+
+    <div class="totrow" id="totrow"></div>
+
+    <div class="section">
+      <div class="section-label" id="chartLabel">🎼 Rehearsal vs Sunday Attendance</div>
+      <div class="legend" id="legend"></div>
+      <div class="chartscroll"><div class="chartinner" id="chartinner"><canvas id="chart"></canvas></div></div>
+    </div>
+
+    <div class="defgrid">
+      <div class="defcol">
+        <div class="section-label reh">🚩 Rehearsal defaulters — no rehearsal data</div>
+        <div id="rehDef"></div>
+      </div>
+      <div class="defcol">
+        <div class="section-label">🚩 Sunday defaulters — no Sunday data</div>
+        <div id="sunDef"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+  const valueLabels = { id:'valueLabels', afterDatasetsDraw:function(chart){
+    const ctx=chart.ctx;
+    chart.data.datasets.forEach(function(ds,di){
+      const meta=chart.getDatasetMeta(di); if(meta.hidden) return;
+      meta.data.forEach(function(bar,i){
+        const v=ds.data[i]; if(v==null) return;
+        ctx.save(); ctx.fillStyle='#fff'; ctx.font='bold 11px Arial'; ctx.textAlign='center';
+        ctx.fillText(v, bar.x, bar.y-5); ctx.restore();
+      });
+    });
+  }};
+
+  const xAxis = { ticks:{color:'#ddd',font:{size:11},maxRotation:60,minRotation:35}, grid:{color:'#1e1e1e'} };
+  const yAxis = { beginAtZero:true, grace:'16%', ticks:{color:'#ddd',precision:0},
+    title:{display:true,text:'People',color:'#888'}, grid:{color:'#1e1e1e'} };
+
+  let idx = 0, chart = null;
+
+  (function(){
+    const jump = document.getElementById('jump');
+    GROUPS.forEach(function(g,i){
+      const o=document.createElement('option'); o.value=i; o.textContent=(i+1)+'. '+g.name; jump.appendChild(o);
+    });
+  })();
+
+  function step(d){ goTo(idx+d); }
+  function goTo(i){
+    idx = Math.max(0, Math.min(GROUPS.length-1, i));
+    document.getElementById('jump').value = idx;
+    document.getElementById('prev').disabled = idx===0;
+    document.getElementById('next').disabled = idx===GROUPS.length-1;
+    render(GROUPS[idx]);
+    if (history.replaceState) history.replaceState(null,'','#'+GROUPS[idx].id);
+  }
+  document.addEventListener('keydown', function(e){
+    if (e.target.tagName==='SELECT') return;
+    if (e.key==='ArrowRight') step(1); else if (e.key==='ArrowLeft') step(-1);
+  });
+
+  // render a defaulter list for one metric; collapses to a banner when the whole group defaulted
+  function defHTML(rows, defs, metricLabel){
+    if (!defs.length)
+      return '<div class="defaulters"><div class="def-none">✅ <b>None</b> — every pair submitted '+metricLabel+'.</div></div>';
+    if (defs.length === rows.length)
+      return '<div class="defaulters"><div class="def-all">⚠ <b>Whole group</b> — no '+metricLabel+' submitted ('+defs.length+' pairs).</div></div>';
+    return '<div class="defaulters">' + defs.map(function(r){
+      return '<div class="def-row"><span class="dot"></span><span class="who">'+r.label+'</span>' +
+        '<span class="reason">'+(r.note || 'Not submitted')+'</span></div>';
+    }).join('') + '</div>';
+  }
+
+  function render(g){
+    const rows = g.rows;
+    const tReh = GLGC.sum(rows,'reh');
+    const tSun = GLGC.sum(rows,'sun');
+    const hasSun = GLGC.has(rows,'sun');
+    const rehDefs = GLGC.defaulters(rows,'reh');
+    const sunDefs = GLGC.defaulters(rows,'sun');
+
+    document.getElementById('gname').textContent = g.name;
+    document.getElementById('prog').textContent = 'Group ' + (idx+1) + ' of ' + GROUPS.length;
+
+    document.getElementById('totrow').innerHTML =
+      '<span class="tot reh">Rehearsal ' + tReh + '</span>' +
+      (hasSun ? '<span class="tot sun">Sunday ' + tSun + '</span>' : '') +
+      '<span class="tot def">Reh defaulters ' + rehDefs.length + '</span>' +
+      '<span class="tot def">Sun defaulters ' + sunDefs.length + '</span>';
+
+    document.getElementById('chartLabel').textContent =
+      (hasSun ? '🎼 Rehearsal vs Sunday Attendance' : '🎼 Rehearsal Attendance');
+    document.getElementById('legend').innerHTML =
+      '<span><i class="sw" style="background:var(--blue)"></i> Rehearsal (hub)</span>' +
+      (hasSun ? '<span><i class="sw" style="background:var(--sun)"></i> Sunday attendance</span>' : '');
+
+    const inner = document.getElementById('chartinner');
+    inner.style.minWidth = Math.max(680, rows.length*82) + 'px';
+
+    const datasets = [
+      { label:'Rehearsal (hub)', data:rows.map(r=>r.reh==null?0:r.reh),
+        backgroundColor:'#1f5fff', borderRadius:3, maxBarThickness:40 }
+    ];
+    if (hasSun) datasets.push(
+      { label:'Sunday attendance', data:rows.map(r=>r.sun==null?0:r.sun),
+        backgroundColor:'#f5c518', borderRadius:3, maxBarThickness:40 });
+
+    if (chart) chart.destroy();
+    chart = new Chart(document.getElementById('chart'), {
+      type:'bar', plugins:[valueLabels],
+      data:{ labels:rows.map(r=>r.label), datasets:datasets },
+      options:{ responsive:true, maintainAspectRatio:false, animation:{duration:350},
+        plugins:{ legend:{display:false} }, scales:{ x:xAxis, y:yAxis } }
+    });
+
+    document.getElementById('rehDef').innerHTML = defHTML(rows, rehDefs, 'rehearsal data');
+    document.getElementById('sunDef').innerHTML = defHTML(rows, sunDefs, 'Sunday data');
+  }
+
+  (function(){
+    const h = (location.hash||'').replace('#','');
+    const start = GROUPS.findIndex(g=>g.id===h);
+    goTo(start<0?0:start);
+  })();
+  </script>
+</body>
+</html>
