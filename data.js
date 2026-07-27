@@ -52,7 +52,7 @@ window.GROUPS = [
       {label:"Yvonne",            gov:"RJ · Love Never Fails", reh:2,    sun:5},
       {label:"Matthew & Bernard", gov:"RJ · Love Never Fails", reh:null, sun:null, note:"No report (had IAs)"},
       /* Helen — Abundant Love 2 */
-      {label:"Helen & Morgan",    gov:"Helen · Abundant Love 2", reh:10,   sun:null, note:"No Sunday report"},
+      {label:"Helen & Morgan",    gov:"Helen · Abundant Love 2", reh:10,   sun:20},
     ]
   },
   {
