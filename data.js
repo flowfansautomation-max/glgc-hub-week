@@ -10,14 +10,14 @@ window.GROUPS = [
   {
     id:"hj", name:"HJ's Group",
     rows:[
-      {label:"Lekma",     reh:5,    sun:13},
-      {label:"Ebenezer",  reh:2,    sun:5},
-      {label:"Tema",      reh:7,    sun:9},
-      {label:"Nungua",    reh:3,    sun:8},
-      {label:"Ayorkowuo", reh:null, sun:4,  note:"Festus — no report"},
-      {label:"Afienya",   reh:5,    sun:9},
-      {label:"FSLOA",     reh:null, sun:13, note:"Sunday only, no rehearsal"},
-      {label:"Tesano",    reh:5,    sun:18},
+      {label:"Sarah & Francis/Millicent", reh:5,    sun:13},
+      {label:"Johnny & Millicent",        reh:2,    sun:5},
+      {label:"Fiifi & Bryana",            reh:7,    sun:9},
+      {label:"HJ (Nungua)",               reh:3,    sun:8},
+      {label:"Festus",                    reh:null, sun:4,  note:"No rehearsal report"},
+      {label:"Kezia & Joycelyn",          reh:5,    sun:9},
+      {label:"HJ (FSLOA)",                reh:null, sun:13, note:"Sunday only, no rehearsal"},
+      {label:"Janet",                     reh:5,    sun:18},
     ]
   },
   {
