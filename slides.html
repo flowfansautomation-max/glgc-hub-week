@@ -6,7 +6,7 @@
   <title>GLGC — Hub &amp; Sunday Attendance · Slideshow</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-  <script src="data.js?v=5"></script>
+  <script src="data.js?v=6"></script>
   <style>
     :root { --blue:#1f5fff; --gold:#e6c878; --red:#e2574c; --sun:#f5c518; }
     * { box-sizing:border-box; }
@@ -33,7 +33,8 @@
     .header { text-align:center; margin:12px 0 4px; }
     .header .gname { font-family:Georgia,'Times New Roman',serif; color:var(--gold);
       font-size:38px; font-weight:bold; letter-spacing:.5px; display:block; }
-    .header .prog { color:#888; font-size:13px; margin-top:8px; }
+    .header .gchoirs { color:#d8c286; font-size:13px; margin-top:8px; max-width:900px; margin-left:auto; margin-right:auto; }
+    .header .prog { color:#888; font-size:13px; margin-top:6px; }
 
     .totrow { display:flex; gap:12px; justify-content:center; margin:14px 0 2px; flex-wrap:wrap; }
     .tot { font-size:14px; font-weight:bold; padding:7px 16px; border-radius:22px; }
@@ -92,6 +93,7 @@
   <div class="stage">
     <div class="header">
       <span class="gname" id="gname"></span>
+      <div class="gchoirs" id="gchoirs"></div>
       <div class="prog" id="prog"></div>
     </div>
 
@@ -176,6 +178,7 @@
     const sunDefs = GLGC.defaulters(rows,'sun');
 
     document.getElementById('gname').textContent = g.name;
+    document.getElementById('gchoirs').textContent = 'Choirs: ' + GLGC.choirs(rows).map(function(c){return c.gov+' ('+c.n+')';}).join('   ·   ');
     document.getElementById('prog').textContent = 'Group ' + (idx+1) + ' of ' + GROUPS.length;
 
     document.getElementById('totrow').innerHTML =
