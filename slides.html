@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>GLGC — Hub &amp; Sunday Attendance · Slideshow</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script src="data.js?v=5"></script>
   <style>
     :root { --blue:#1f5fff; --gold:#e6c878; --red:#e2574c; --sun:#f5c518; }
@@ -16,6 +17,10 @@
     .nav a { color:#bbb; text-decoration:none; border:1px solid #333; border-radius:20px; padding:7px 16px; font-size:14px; }
     .nav a.active { background:var(--gold); color:#000; border-color:var(--gold); font-weight:bold; }
     select { background:#111; color:#fff; border:1px solid #333; border-radius:8px; padding:8px 12px; font-size:14px; max-width:260px; }
+    .pdfbtn { background:var(--gold); color:#000; border:1px solid var(--gold); border-radius:20px; padding:8px 16px;
+      font-size:14px; font-weight:bold; cursor:pointer; font-family:inherit; }
+    .pdfbtn:disabled { opacity:.5; cursor:default; }
+    .prog { color:var(--gold); font-size:13px; }
 
     .navbtn { position:fixed; top:50%; transform:translateY(-50%); z-index:5;
       width:56px; height:110px; border:1px solid #333; background:#141414cc; color:var(--gold);
@@ -77,6 +82,8 @@
       <a href="summary.html">Weekly Summary</a>
     </div>
     <select id="jump" onchange="goTo(+this.value)"></select>
+    <button class="pdfbtn" id="pdfBtn" onclick="generatePDF()">⤓ Download PDF</button>
+    <span class="prog" id="pdfProg" style="display:none"></span>
   </div>
 
   <button class="navbtn prev" id="prev" onclick="step(-1)">‹</button>
@@ -204,6 +211,155 @@
 
     document.getElementById('rehDef').innerHTML = defHTML(rows, rehDefs, 'rehearsal data');
     document.getElementById('sunDef').innerHTML = defHTML(rows, sunDefs, 'Sunday data');
+  }
+
+  /* ===== PDF export: one page per group + a final summary page ===== */
+  // paints the offscreen canvas black so exported charts match the dark theme
+  const blackBg = { id:'blackBg', beforeDraw:function(c){ const x=c.ctx; x.save(); x.fillStyle='#000'; x.fillRect(0,0,c.width,c.height); x.restore(); } };
+
+  function chartImage(config){
+    return new Promise(function(res){
+      const cv=document.createElement('canvas'); cv.width=1500; cv.height=560;
+      cv.style.position='fixed'; cv.style.left='-99999px'; cv.style.top='0';
+      document.body.appendChild(cv);
+      const ch=new Chart(cv, config);
+      setTimeout(function(){ const d=ch.toBase64Image('image/jpeg',0.92); ch.destroy(); cv.remove(); res(d); }, 90);
+    });
+  }
+  function groupChartConfig(rows, hasSun){
+    const datasets=[{ label:'Rehearsal', data:rows.map(r=>r.reh==null?0:r.reh),
+      backgroundColor:'#1f5fff', borderRadius:3, maxBarThickness:46 }];
+    if(hasSun) datasets.push({ label:'Sunday', data:rows.map(r=>r.sun==null?0:r.sun),
+      backgroundColor:'#f5c518', borderRadius:3, maxBarThickness:46 });
+    return { type:'bar', plugins:[valueLabels, blackBg],
+      data:{ labels:rows.map(r=>r.label), datasets:datasets },
+      options:{ responsive:false, animation:false, plugins:{ legend:{display:false} },
+        scales:{ x:{ ticks:{color:'#ddd',font:{size:12},maxRotation:55,minRotation:35}, grid:{color:'#1e1e1e'} },
+                 y:{ beginAtZero:true, grace:'16%', ticks:{color:'#ddd',precision:0}, grid:{color:'#1e1e1e'} } } } };
+  }
+  function summaryChartConfig(agg){
+    return { type:'bar', plugins:[valueLabels, blackBg],
+      data:{ labels:agg.map(a=>a.name), datasets:[
+        { label:'Rehearsal', data:agg.map(a=>a.reh), backgroundColor:'#1f5fff', borderRadius:4, maxBarThickness:80 },
+        { label:'Sunday', data:agg.map(a=>a.sun), backgroundColor:'#f5c518', borderRadius:4, maxBarThickness:80 } ]},
+      options:{ responsive:false, animation:false, plugins:{ legend:{display:false} },
+        scales:{ x:{ ticks:{color:'#ddd',font:{size:14}}, grid:{color:'#1e1e1e'} },
+                 y:{ beginAtZero:true, grace:'14%', ticks:{color:'#ddd',precision:0}, grid:{color:'#1e1e1e'} } } } };
+  }
+
+  // draws a defaulter list into a column; returns the y after the last row
+  function drawDefList(doc, title, accent, defs, x, y, colW){
+    doc.setTextColor(accent[0],accent[1],accent[2]); doc.setFont('helvetica','bold'); doc.setFontSize(11);
+    doc.text(title, x, y); y+=6;
+    doc.setFontSize(9.5);
+    if(!defs.length){ doc.setTextColor(150,220,170); doc.setFont('helvetica','normal');
+      doc.text('None — every pair submitted.', x, y); return y+6; }
+    defs.forEach(function(r){
+      doc.setTextColor(226,120,110); doc.setFont('helvetica','bold');
+      doc.text('•', x, y);
+      doc.setTextColor(235,235,235); doc.setFont('helvetica','normal');
+      const name=doc.splitTextToSize(r.label, colW-46)[0];
+      doc.text(name, x+4, y);
+      doc.setTextColor(190,150,150); doc.setFont('helvetica','italic'); doc.setFontSize(8);
+      doc.text(r.note||'Not submitted', x+colW, y, {align:'right'});
+      doc.setFontSize(9.5);
+      y+=5.4;
+    });
+    return y;
+  }
+
+  async function generatePDF(){
+    const btn=document.getElementById('pdfBtn'), prog=document.getElementById('pdfProg');
+    btn.disabled=true; prog.style.display='inline'; prog.textContent='Generating…';
+    try{
+      const jsPDF=window.jspdf.jsPDF;
+      const doc=new jsPDF({orientation:'landscape', unit:'mm', format:'a4'});
+      const W=297, H=210, M=14;
+
+      for(let gi=0; gi<GROUPS.length; gi++){
+        const g=GROUPS[gi], rows=g.rows;
+        const tReh=GLGC.sum(rows,'reh'), tSun=GLGC.sum(rows,'sun'), hasSun=GLGC.has(rows,'sun');
+        const rehDefs=GLGC.defaulters(rows,'reh'), sunDefs=GLGC.defaulters(rows,'sun');
+        if(gi>0) doc.addPage();
+        doc.setFillColor(0,0,0); doc.rect(0,0,W,H,'F');
+        // heading
+        doc.setTextColor(230,200,120); doc.setFont('times','bold'); doc.setFontSize(24);
+        doc.text(g.name, W/2, 16, {align:'center'});
+        doc.setTextColor(180,180,180); doc.setFont('helvetica','normal'); doc.setFontSize(10.5);
+        doc.text('Rehearsal '+tReh+'    ·    '+(hasSun?('Sunday '+tSun+'    ·    '):'')+
+          'Reh defaulters '+rehDefs.length+'    ·    Sun defaulters '+sunDefs.length, W/2, 24, {align:'center'});
+        // chart
+        const img=await chartImage(groupChartConfig(rows, hasSun));
+        doc.addImage(img,'JPEG', M, 29, W-2*M, 92);
+        // defaulter columns
+        const colW=(W-2*M-10)/2;
+        drawDefList(doc, 'Rehearsal defaulters ('+rehDefs.length+')', [143,176,255], rehDefs, M, 132, colW);
+        drawDefList(doc, 'Sunday defaulters ('+sunDefs.length+')', [242,147,139], sunDefs, M+colW+10, 132, colW);
+        // footer
+        doc.setTextColor(120,120,120); doc.setFont('helvetica','normal'); doc.setFontSize(8);
+        doc.text('GLGC · Experience Service · 27 Jul 2026', M, H-8);
+        doc.text('Group '+(gi+1)+' of '+GROUPS.length, W-M, H-8, {align:'right'});
+        prog.textContent='Generating… '+(gi+1)+'/'+(GROUPS.length+1);
+      }
+
+      // ===== summary page =====
+      const agg=GROUPS.map(function(g){ return { name:g.name, reh:GLGC.sum(g.rows,'reh'), sun:GLGC.sum(g.rows,'sun'),
+        pairs:g.rows.length, rehDef:GLGC.defaulters(g.rows,'reh').length, sunDef:GLGC.defaulters(g.rows,'sun').length }; });
+      const T=agg.reduce(function(a,x){ a.reh+=x.reh;a.sun+=x.sun;a.pairs+=x.pairs;a.rehDef+=x.rehDef;a.sunDef+=x.sunDef;return a; },
+        {reh:0,sun:0,pairs:0,rehDef:0,sunDef:0});
+      doc.addPage(); doc.setFillColor(0,0,0); doc.rect(0,0,W,H,'F');
+      doc.setTextColor(230,200,120); doc.setFont('times','bold'); doc.setFontSize(24);
+      doc.text('Weekly Summary', W/2, 16, {align:'center'});
+      doc.setTextColor(160,160,160); doc.setFont('helvetica','normal'); doc.setFontSize(10);
+      doc.text('Experience Service · 27 July 2026', W/2, 23, {align:'center'});
+      // KPI row
+      const kpis=[['Total Rehearsal',T.reh,[143,176,255]],['Total Sunday',T.sun,[245,197,24]],
+        ['Reh Defaulters',T.rehDef,[226,120,110]],['Sun Defaulters',T.sunDef,[226,120,110]]];
+      const kw=(W-2*M-3*6)/4;
+      kpis.forEach(function(k,i){ const x=M+i*(kw+6);
+        doc.setDrawColor(40,40,40); doc.setFillColor(14,14,14); doc.roundedRect(x,29,kw,22,2,2,'FD');
+        doc.setTextColor(140,140,140); doc.setFont('helvetica','bold'); doc.setFontSize(8.5);
+        doc.text(k[0].toUpperCase(), x+5, 36);
+        doc.setTextColor(k[2][0],k[2][1],k[2][2]); doc.setFontSize(20); doc.text(String(k[1]), x+5, 47);
+      });
+      // summary chart
+      const simg=await chartImage(summaryChartConfig(agg));
+      doc.addImage(simg,'JPEG', M, 56, W-2*M, 78);
+      // totals table
+      let ty=142;
+      const cols=[M, M+95, M+130, M+168, M+210, M+250];
+      const heads=['Group','Rehearsal','Sunday','Pairs','Reh def','Sun def'];
+      doc.setTextColor(150,150,150); doc.setFont('helvetica','bold'); doc.setFontSize(9);
+      heads.forEach(function(h,i){ doc.text(h, cols[i], ty, i===0?{}:{align:'right'}); });
+      ty+=2; doc.setDrawColor(50,50,50); doc.line(M, ty, W-M, ty); ty+=6;
+      doc.setFont('helvetica','normal'); doc.setFontSize(9.5);
+      agg.forEach(function(a){
+        doc.setTextColor(235,235,235); doc.text(a.name, cols[0], ty);
+        doc.setTextColor(143,176,255); doc.text(String(a.reh), cols[1], ty, {align:'right'});
+        doc.setTextColor(245,197,24); doc.text(String(a.sun), cols[2], ty, {align:'right'});
+        doc.setTextColor(200,200,200); doc.text(String(a.pairs), cols[3], ty, {align:'right'});
+        doc.setTextColor(242,147,139); doc.text(String(a.rehDef), cols[4], ty, {align:'right'});
+        doc.text(String(a.sunDef), cols[5], ty, {align:'right'});
+        ty+=6.5;
+      });
+      ty+=1; doc.setDrawColor(80,80,80); doc.setLineWidth(0.5); doc.line(M, ty, W-M, ty); ty+=6;
+      doc.setFont('helvetica','bold');
+      doc.setTextColor(255,255,255); doc.text('Week total', cols[0], ty);
+      doc.setTextColor(143,176,255); doc.text(String(T.reh), cols[1], ty, {align:'right'});
+      doc.setTextColor(245,197,24); doc.text(String(T.sun), cols[2], ty, {align:'right'});
+      doc.setTextColor(200,200,200); doc.text(String(T.pairs), cols[3], ty, {align:'right'});
+      doc.setTextColor(242,147,139); doc.text(String(T.rehDef), cols[4], ty, {align:'right'});
+      doc.text(String(T.sunDef), cols[5], ty, {align:'right'});
+      doc.setTextColor(120,120,120); doc.setFont('helvetica','normal'); doc.setFontSize(8);
+      doc.text('GLGC · Hub & Sunday Attendance', M, H-8);
+      doc.text('Summary · '+(GROUPS.length+1)+' of '+(GROUPS.length+1), W-M, H-8, {align:'right'});
+
+      doc.save('GLGC-Hub-Sunday-Attendance-27Jul2026.pdf');
+      prog.textContent='Done ✓';
+      setTimeout(function(){ prog.style.display='none'; }, 2500);
+    } catch(e){
+      console.error(e); prog.textContent='PDF failed — see console';
+    } finally { btn.disabled=false; }
   }
 
   (function(){
